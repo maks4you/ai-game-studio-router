@@ -58,7 +58,7 @@ test('project ZIP export and import round trip validates structure and preserves
     const zip = Buffer.from(await exported.arrayBuffer());
     assert.ok(zip.length > 100);
     const duplicate = await upload(zip);
-    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.status, 409, await duplicate.clone().text());
     assert.deepEqual(await duplicate.json(), {
       error: "A project named 'export-game' already exists", existingName: 'export-game',
     });

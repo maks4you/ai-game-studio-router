@@ -198,7 +198,7 @@ export function saveSpritesheet(dataUrl: string, frameSize: FrameSize): Promise<
   return postJson("/api/projects/spritesheet", { dataUrl, frameSize });
 }
 
-export async function checkHealth(): Promise<{ ok: boolean; hasApiKey: boolean }> {
+export async function checkHealth(): Promise<{ ok: boolean; hasApiKey: boolean; aiProvider?: "openrouter" | "routerai" }> {
   const res = await fetch("/api/health");
   return res.json();
 }

@@ -2,7 +2,7 @@
 
 ## Character views and animation endpoints (supersedes single-reference details below)
 
-- Generate side (facing right), front and back views through OpenRouter's Images API. Front/back use the same side reference via `input_references`.
+- Generate side (facing right), front and back views through the selected OpenRouter or RouterAI Images API. Front/back use the same side reference via `input_references`.
 - Normalize actual visible silhouettes to a shared 1024×1024 transparent canvas, equal height, horizontal center and baseline, without stretching or clipping. Preserve provider originals. Stage all three views in one revision; atomically update only the character manifest after all succeed.
 - Version-2 character manifests add optional `referenceViews` and `referenceAlignment`; `sprite` remains the side-view alias. Legacy single references remain available as Side without rewriting their original files.
 - Animation `startImage` / `endImage` are optional saved PNG poses with source metadata. Pickers offer references and the first/last chronologically included frames of any animation in the same character. Snapshot inputs into the target animation; rename and duplicate remap their paths, and deleting a source does not break saved poses.
@@ -13,13 +13,13 @@
 
 ## Sound & SFX (supersedes earlier Music/OpenRouter-only audio instructions)
 
-- Sound & SFX uses ElevenLabs directly from the server with `ELEVENLABS_API_KEY` in `.env`. This is an explicit exception to the OpenRouter-only boundary; images and video still use OpenRouter.
+- Sound & SFX uses ElevenLabs directly from the server with `ELEVENLABS_API_KEY` in `.env`. This is an explicit exception to the selected OpenRouter/RouterAI image-and-video provider. RouterAI currently has no documented text-to-sound-effects endpoint.
 - POST `https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128` with `xi-api-key` and JSON `text`, `model_id: "eleven_text_to_sound_v2"`, `duration_seconds`, and `loop`. Read binary MP3; do not use chat completions, SSE, or music-only prompt directives.
 - Duration is Auto (`null`, the default) or a finite number between 0.5 and 30, inclusive. Preserve null through client requests, drafts, output settings, and the ElevenLabs request. Save actual decoded length separately as `output.actualDuration`.
 - Looping uses the provider's native `loop` flag. Preserve decoded samples without local crossfades, trimming, or fades. Keep the animated SVG loading character and Test Loop control.
 - Keep existing `music/<name>/music.json`, `.project` music fields, `/api/music` routes, and X-Music-Id scoping for compatibility. Lyria draft settings adapt to the new model (lengths >30 become Auto); preserve original files and committed metadata.
 - Stage original MP3 and 48 kHz stereo WAV in isolated revisions and atomically commit only after successful processing. Failed generations preserve the previous output.
-- Redact actual provider key values as well as token prefixes from errors. Never expose either provider key to the browser. Health/key warnings distinguish OpenRouter from ElevenLabs.
+- Redact actual provider key values as well as token prefixes from errors. Never expose provider keys to the browser. Health/key warnings identify the selected OpenRouter or RouterAI key and distinguish ElevenLabs.
 - Run `npm run build` and `node --import tsx --test tests/*.test.ts` for sound and storage changes.
 
 ## Current project storage and startup
@@ -53,17 +53,17 @@ The project implementation now supersedes the older working-copy/snapshot detail
 
 ## Project
 
-A lightweight web app — and the seed of a larger AI Game Studio — for generating 2D game assets from text prompts. Today: reference sprites and animation frames composed into a 1×N spritesheet with a looping animated preview. The app uses [OpenRouter](https://openrouter.ai) as the single boundary to the model providers, which gives access to 300+ image / video / audio / text models behind one API key. New asset types (backgrounds, tilemaps, SFX, music, voice) plug into the same pattern.
+A lightweight web app — and the seed of a larger AI Game Studio — for generating 2D game assets from text prompts. Today: reference sprites and animation frames composed into a 1×N spritesheet with a looping animated preview. Image and video generation use the server-side provider selected with `AI_PROVIDER` (`openrouter` or `routerai`); Sound & SFX uses ElevenLabs directly. New asset types (backgrounds, tilemaps, SFX, music, voice) plug into the same pattern.
 
-The app is implemented as a Vite + TypeScript single-page client and a small Express server (run concurrently in dev via `tsx watch`). Keep the UI lightweight and avoid heavy UI libraries. The server makes raw `fetch` calls to OpenRouter — no provider SDKs.
+The app is implemented as a Vite + TypeScript single-page client and a small Express server (run concurrently in dev via `tsx watch`). Keep the UI lightweight and avoid heavy UI libraries. The server makes raw `fetch` calls to the selected image/video provider and ElevenLabs — no provider SDKs.
 
 ## Non-negotiable requirements
 
 - The UI must adhere closely to `mockup.png` (the three-column "Sprite Sheet Builder" layout).
-- Use OpenRouter as the single boundary between the browser and any model provider.
-- Expect `OPENROUTER_API_KEY` to be defined in a local `.env` file.
-- Never expose `OPENROUTER_API_KEY` in client-side code.
-- All model calls go through server-side routes; the browser never talks to OpenRouter or any provider directly.
+- Use OpenRouter or RouterAI, selected by `AI_PROVIDER`, as the server-side boundary for image and video models.
+- Expect the matching `OPENROUTER_API_KEY` or `ROUTERAI_API_KEY` to be defined in a local `.env` file.
+- Never expose provider API keys in client-side code.
+- All model calls go through server-side routes; the browser never talks to OpenRouter, RouterAI, or any model provider directly.
 - Generated artifacts live under `projects/` (gitignored). Source frames, videos, spritesheets, gifs, and the working manifest are never committed.
 - Do not commit `.env`, `projects/`, `frames/`, `*.mp4`, `*.mov`, `*.webm`.
 
@@ -72,7 +72,10 @@ The app is implemented as a Vite + TypeScript single-page client and a small Exp
 `.env.example` documents:
 
 ```bash
+AI_PROVIDER=openrouter
 OPENROUTER_API_KEY=
+ROUTERAI_API_KEY=
+ELEVENLABS_API_KEY=
 ```
 
 Developer copies it locally:
@@ -88,7 +91,7 @@ npm install express
 npm install -D vite typescript tsx concurrently dotenv @types/express @types/node
 ```
 
-No provider SDK is used. The server hits OpenRouter directly with `fetch`. This keeps the server independent of any one provider's release cadence and makes it trivial to add new model types.
+No provider SDK is used. The server hits the selected OpenRouter or RouterAI API directly with `fetch`. Set `AI_PROVIDER=routerai` and `ROUTERAI_API_KEY` to use RouterAI; the default remains OpenRouter for existing installations. Sound & SFX continues to use `ELEVENLABS_API_KEY` directly.
 
 `ffmpeg` must be available on `PATH` — used for both frame extraction (with chroma-key alpha) and animated GIF preview build.
 
@@ -101,7 +104,7 @@ Use `mockup.png` as the source of truth for the three-column layout, spacing, an
 3. A preview area for the generated sprite (with dimensions caption).
 4. A motion / sequence description input (e.g. "walking left", "jump", "attack right").
 5. A **video model selector** (dropdown) above the Generate Frames button. Options come from `GET /api/models/video`. Default: `x-ai/grok-imagine-video`.
-6. A "Generate Frames" button that runs the chosen model via OpenRouter, downloads the clip, and extracts transparent PNG frames.
+6. A "Generate Frames" button that runs the chosen model via the selected image/video provider, downloads the clip, and extracts transparent PNG frames.
 7. A scrollable grid of every extracted frame, each tile click-toggleable to include/exclude it from the spritesheet.
 8. A "Generate Spritesheet" button that composes the selected frames client-side into a 1×N PNG.
 9. A horizontally scrollable spritesheet preview, an Export PNG button, and a looping animated GIF preview.
@@ -137,12 +140,12 @@ Keep the interface focused on sprite creation. Future asset types (backgrounds, 
 │   ├── index.ts                  # Express app + route handlers
 │   ├── files.ts                  # paths, PNG dim parser, safe name
 │   ├── projects.ts               # manifest read/write, save/load
-│   ├── image.ts                  # OpenRouter chat-completions image gen
-│   ├── video.ts                  # OpenRouter /api/v1/videos + model registry
-│   ├── extract-frames.ts         # ffmpeg wrapper with chromakey
+│   ├── image.ts                  # Selected provider Images API
+│   ├── video.ts                  # Selected provider /api/v1/videos + model registry
+│   ├── extract-frames.ts         # direct ffmpeg wrapper with chromakey
 │   └── build-gif.ts              # animated preview GIF build
 ├── scripts/
-│   └── extract-frames.sh         # ffmpeg chromakey + scale → transparent PNGs
+│   └── extract-frames.sh         # optional CLI equivalent; server does not require Bash
 └── projects/                     # gitignored
     ├── latest/                   # working state
     │   ├── sprite.json           # manifest
@@ -161,7 +164,7 @@ Use TypeScript everywhere. Strict mode on.
 
 ### Server endpoints
 
-- `GET /api/health` → `{ ok, hasApiKey }`. `hasApiKey` reflects `OPENROUTER_API_KEY` being set.
+- `GET /api/health` → `{ ok, hasApiKey, aiProvider }`. `hasApiKey` reflects the selected provider's API key.
 - `GET /api/models/video` → `{ models: [{ id, label, defaultDuration }, ...], default: "x-ai/grok-imagine-video" }`. The list is the single source of truth for the client's model dropdown and the server's allowlist.
 - `GET /api/projects/current` → current `projects/latest/` view (hydrated with URLs).
 - `GET /api/projects` → array of saved snapshots `{ name, updatedAt }`, newest first.
@@ -171,17 +174,19 @@ Use TypeScript everywhere. Strict mode on.
 - `POST /api/projects/delete { name }` → removes a named snapshot.
 - `POST /api/projects/selection { selectedIndices: number[] }` → debounced persistence of the user's frame selection.
 - `POST /api/projects/spritesheet { dataUrl }` → writes `projects/latest/spritesheet.png` and best-effort builds `projects/latest/preview.gif` from the current selection. Returns the updated view.
-- `POST /api/sprites/generate { prompt }` → calls OpenRouter chat-completions, writes `latest/ref/sprite.png`, parses PNG dimensions, returns `{ view, dataUrl }`.
-- `POST /api/sprites/animate { image, text, model?, duration? }` → resolves `image` (either a `data:` URL or a `/projects/...` path with query strings stripped), validates `model` against the allowlist, calls OpenRouter `/api/v1/videos` with the chosen model's `defaultDuration` if not overridden, polls until `completed`, downloads the clip, runs frame extraction, returns the updated view.
+- `POST /api/sprites/generate { prompt }` → calls the selected provider's `/api/v1/images`, writes the reference PNG, parses dimensions, and returns `{ view, dataUrl }`.
+- `POST /api/sprites/animate { image, text, model?, duration? }` → resolves `image` (either a `data:` URL or a `/projects/...` path with query strings stripped), validates `model` against the allowlist, calls the selected provider's `/api/v1/videos` with the chosen model's `defaultDuration` if not overridden, polls until `completed`, downloads the clip, runs frame extraction, returns the updated view.
 
-All error responses are `{ error: string }` with `sk-or-...` and `xai-...` tokens redacted.
+All error responses are `{ error: string }` with configured provider keys and provider token formats redacted.
 
 ## Initial sprite image generation
 
-Image generation goes through OpenRouter's chat-completions endpoint with `modalities: ["image"]`. Default model is `x-ai/grok-imagine-image-quality` (image-only output; do **not** include `"text"` in the modalities array — the model rejects it).
+Image generation goes through the selected provider's `/api/v1/images` endpoint. RouterAI uses `https://routerai.ru/api/v1`; OpenRouter remains the default. Select the provider with `AI_PROVIDER` and provide its matching server-only API key.
+
+The selected provider must support the chosen image model and its parameters. Both documented APIs accept `model`, `prompt`, and `input_references`, and return generated image bytes in `data[0].b64_json`.
 
 ```ts
-const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+import { getAiProviderConfig } from "./ai-provider.js";
 
 const CHROMA_DIRECTIVE =
   "Place the subject on a perfectly flat solid pure chroma green background, " +
@@ -191,10 +196,11 @@ const CHROMA_DIRECTIVE =
   "with chroma keying. Centered, full subject visible.";
 
 export async function generateSpriteImage(prompt: string): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
+  const provider = getAiProviderConfig();
+  const apiKey = provider.apiKey;
+  if (!apiKey) throw new Error(`${provider.keyName} is not set`);
 
-  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+  const res = await fetch(`${provider.baseUrl}/images`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -202,25 +208,16 @@ export async function generateSpriteImage(prompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: "x-ai/grok-imagine-image-quality",
-      modalities: ["image"],
-      messages: [{ role: "user", content: `${prompt.trim()}\n\n${CHROMA_DIRECTIVE}` }],
+      prompt: `${prompt.trim()}\n\n${CHROMA_DIRECTIVE}`,
     }),
   });
 
   const json = await res.json();
   if (!res.ok) throw new Error(json.error?.message ?? `HTTP ${res.status}`);
 
-  const url = json.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-  if (!url) throw new Error("OpenRouter response did not include an image");
-
-  // Most providers return data: URLs; some return HTTPS — handle both.
-  if (url.startsWith("data:")) {
-    const m = url.match(/^data:image\/[a-zA-Z+]+;base64,(.+)$/);
-    if (!m) throw new Error("malformed image data URL");
-    return m[1];
-  }
-  const imgRes = await fetch(url);
-  return Buffer.from(await imgRes.arrayBuffer()).toString("base64");
+  const base64 = json.data?.[0]?.b64_json;
+  if (!base64) throw new Error(`${provider.label} response did not include an image`);
+  return base64;
 }
 ```
 
@@ -229,13 +226,13 @@ Notes:
 - The chroma directive is appended server-side so the UI's prompt input stays natural.
 - Convert the returned base64 to a data URL for preview: `data:image/png;base64,${base64}`.
 - Save to `projects/latest/ref/sprite.png` and parse PNG header bytes 16–23 to get dimensions for the caption.
-- If you swap to a different image model later, only the `model` string changes; the rest of the chat-completions shape is provider-agnostic.
+- Keep image request parameters compatible with both supported provider APIs and verify selected model availability in the provider's catalog.
 
 ## Motion / sequence generation
 
 Two-stage flow:
 
-1. Submit the job via OpenRouter `/api/v1/videos`, then poll `polling_url` until `completed`.
+1. Submit the job via the selected provider's `/api/v1/videos`, then poll `polling_url` until `completed`.
 2. Download the produced MP4 to `projects/latest/source.mp4` and extract transparent PNG frames with the chroma-key + scale ffmpeg filter.
 
 ### Model registry
@@ -333,7 +330,7 @@ The keyable color `#00b140` is referenced in three places — keep them in sync 
 
 1. `server/image.ts` — `CHROMA_DIRECTIVE` includes the hex in the natural-language prompt.
 2. `server/video.ts` — same hex in the video prompt.
-3. `scripts/extract-frames.sh` — `chromakey=0x00b140:0.15:0.08` in the ffmpeg filter.
+3. `server/extract-frames.ts` — `chromakey=0x00b140:0.15:0.08` in the ffmpeg filter. Keep the optional CLI script in sync.
 
 Tuning hints:
 
@@ -342,27 +339,9 @@ Tuning hints:
 
 The reference-sprite preview in column 1 intentionally still shows the green background — it's the *source* image, and keeping the green visible is a useful signal that the chroma layer is doing its job.
 
-## Frame extraction script
+## Frame extraction
 
-`scripts/extract-frames.sh`:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-in="${1:?usage: $0 input.mp4 [output_dir]}"
-dir="${2:-frames}"
-
-mkdir -p "$dir"
-
-ffmpeg -hide_banner -y \
-  -i "$in" \
-  -vf "chromakey=0x00b140:0.15:0.08,scale=320:-1,format=rgba" \
-  -start_number 1 \
-  "$dir/frame-%05d.png"
-
-echo "Wrote frames to: $dir"
-```
+The server passes the input path, chromakey filter, output numbering and destination pattern directly to `ffmpeg` from `server/extract-frames.ts`. It does not spawn Bash. `scripts/extract-frames.sh` remains an optional command-line equivalent.
 
 Make it executable. Call it from Node with `child_process.spawn`, never string-concatenated shell, and only with absolute paths inside the project root (`ensureInsideRoot`). The wrapper clears stale PNGs from the target directory before invoking ffmpeg so the previous run's frames cannot leak into the new one.
 
@@ -431,9 +410,9 @@ The client renders the gif via a plain `<img>` (auto-loops) in a small 180 px-ta
 ## End-to-end user flow
 
 1. User opens the app. Boot fetches `/api/projects/current`, `/api/projects`, and `/api/models/video` to hydrate the most recent working state, populate the Load menu, and fill the model dropdown.
-2. User enters a sprite prompt → `POST /api/sprites/generate` → server appends chroma directive, calls OpenRouter chat-completions, writes `latest/ref/sprite.png`, parses dimensions, returns `{ view, dataUrl }`.
+2. User enters a sprite prompt → `POST /api/sprites/generate` → server appends chroma directive, calls the selected provider's Images API, writes the reference PNG, parses dimensions, returns `{ view, dataUrl }`.
 3. UI shows the sprite (data URL for instant display) on the green chroma background.
-4. User picks a video model and enters a motion prompt → `POST /api/sprites/animate` → server appends chroma directive, submits the job to OpenRouter, polls until `completed`, downloads to `latest/source.mp4` (sending the bearer token if the URL is on `openrouter.ai`), runs `extract-frames.sh` (chromakey → scale → RGBA PNG sequence) into `latest/frames/`.
+4. User picks a video model and enters a motion prompt → `POST /api/sprites/animate` → server appends chroma directive, submits the job to the selected provider, polls until `completed`, downloads to the animation run, and invokes ffmpeg directly to produce chromakey → scale → RGBA PNG frames.
 5. UI shows every extracted frame in a scrollable 4-column grid, all selected by default.
 6. User toggles tiles to refine the selection. Selection persists via debounced PATCH.
 7. User clicks "Generate Spritesheet" → client composes a 1×N PNG at 128 px per cell via Canvas, displays it in the horizontally scrollable preview, and POSTs the dataUrl. Server saves it and best-effort builds the animated GIF preview.

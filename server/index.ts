@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { validatePrompt } from "./validation.js";
+import { getAiProviderConfig, hasAiProviderKey } from "./ai-provider.js";
 import { createProjectArchive, receiveProjectArchive, importProjectArchive, removeArchive, ProjectImportConflict } from "./project-archive.js";
 import { initializeStorage } from "./storage.js";
 await initializeStorage();
@@ -64,7 +65,8 @@ import {
 
 
 const PORT = Number(process.env.PORT ?? 8787);
-const HAS_KEY = Boolean(process.env.OPENROUTER_API_KEY);
+const AI_PROVIDER = getAiProviderConfig();
+const HAS_KEY = hasAiProviderKey();
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -96,7 +98,7 @@ app.use("/projects", express.static(PROJECTS_DIR, { fallthrough: false }));
 function requireKey(_req: Request, res: Response, next: NextFunction) {
   if (!HAS_KEY) {
     res.status(500).json({
-      error: "OPENROUTER_API_KEY is not configured. Add it to .env and restart the server.",
+      error: `${AI_PROVIDER.keyName} is not configured. Add it to .env and restart the server.`,
     });
     return;
   }
@@ -120,7 +122,7 @@ function asImageRef(v: unknown): string {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, hasApiKey: HAS_KEY, hasElevenLabsApiKey: Boolean(process.env.ELEVENLABS_API_KEY) });
+  res.json({ ok: true, hasApiKey: HAS_KEY, aiProvider: AI_PROVIDER.name, hasElevenLabsApiKey: Boolean(process.env.ELEVENLABS_API_KEY) });
 });
 
 app.get("/api/models/video", (_req, res) => {
@@ -510,6 +512,6 @@ const server = app.listen(PORT, () => {
   const port = typeof address === "object" && address ? address.port : PORT;
   console.log(`[server] listening on http://localhost:${port}`);
   if (!HAS_KEY) {
-    console.warn("[server] WARNING: OPENROUTER_API_KEY is missing — character and animation generation are unavailable");
+    console.warn(`[server] WARNING: ${AI_PROVIDER.keyName} is missing — character and animation generation are unavailable`);
   }
 });

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -7,6 +6,7 @@ import { Transform, type Readable } from "node:stream";
 import os from "node:os";
 import path from "node:path";
 import yauzl, { type Entry, type ZipFile } from "yauzl";
+import { ZipFile as ZipWriter } from "yazl";
 import { PROJECTS_DIR, projectDir, safeAssetId, safeProjectName } from "./files.js";
 import { readProjectDocument } from "./projects.js";
 
@@ -27,6 +27,22 @@ export class ProjectImportConflict extends Error {
   }
 }
 
+async function addDirectoryToArchive(archive: ZipWriter, source: string, relative: string): Promise<void> {
+  const entries = await readdir(source, { withFileTypes: true });
+  if (!entries.length) archive.addEmptyDirectory(`${relative}/`);
+  for (const entry of entries) {
+    const sourcePath = path.join(source, entry.name);
+    const relativePath = path.posix.join(relative, entry.name);
+    if (entry.isDirectory()) {
+      await addDirectoryToArchive(archive, sourcePath, relativePath);
+    } else if (entry.isFile()) {
+      archive.addFile(sourcePath, relativePath);
+    } else {
+      throw new Error("Project contains a link or unsupported file type");
+    }
+  }
+}
+
 async function rejectLinks(dir: string): Promise<void> {
   for (const item of await readdir(dir, { withFileTypes: true })) {
     const file = path.join(dir, item.name);
@@ -40,14 +56,18 @@ export async function createProjectArchive(name: string): Promise<string> {
   await readProjectDocument(name);
   await rejectLinks(projectDir(name));
   const file = path.join(os.tmpdir(), `ai-game-studio-${randomUUID()}.zip`);
+  const archive = new ZipWriter();
+  const output = createWriteStream(file, { flags: "wx" });
+  archive.once("error", error => output.destroy(error));
+  const writing = pipeline(archive.outputStream, output);
   try {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn("zip", ["-q", "-r", "-X", file, name], { cwd: PROJECTS_DIR, stdio: "ignore" });
-      child.once("error", reject);
-      child.once("close", code => code === 0 ? resolve() : reject(new Error("Could not create project archive")));
-    });
+    await addDirectoryToArchive(archive, projectDir(name), name);
+    archive.end();
+    await writing;
     return file;
   } catch (error) {
+    (archive.outputStream as Readable).destroy(error instanceof Error ? error : new Error(String(error)));
+    await writing.catch(() => {});
     await rm(file, { force: true });
     throw error;
   }

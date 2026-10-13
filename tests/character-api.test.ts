@@ -91,7 +91,7 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     const beforeRejectedPair = await readFile(requestsFile, "utf8");
     response = await post("/api/sprites/animate", { text: "turn north", model: "minimax/hailuo-3-max" });
     assert.equal(response.status, 400);
-    assert.match((await response.json()).error, /H3 Max supports only a start image through OpenRouter/);
+    assert.match((await response.json()).error, /H3 Max supports only a start image with the selected API provider/);
     assert.equal(await readFile(requestsFile, "utf8"), beforeRejectedPair, "reject unsupported pairs before calling OpenRouter");
     const afterRejectedPair = await (await fetch(base + "/api/projects/current", { headers })).json() as ProjectView;
     assert.deepEqual(afterRejectedPair.startImage, selected.startImage);
@@ -187,7 +187,7 @@ test("aligned references and saved endpoint poses survive generations, edits, re
     const beforeRejectedEnd = await readFile(requestsFile, "utf8");
     response = await post("/api/sprites/animate", { text: "turn", model: "minimax/hailuo-3-max" });
     assert.equal(response.status, 400);
-    assert.match((await response.json()).error, /H3 Max supports only a start image through OpenRouter/);
+    assert.match((await response.json()).error, /H3 Max supports only a start image with the selected API provider/);
     assert.equal(await readFile(requestsFile, "utf8"), beforeRejectedEnd, "reject end-only requests before calling OpenRouter");
     current = await (await fetch(base + "/api/projects/current", { headers })).json();
     assert.equal(current.startImage, null, "rejection must not add a first frame");

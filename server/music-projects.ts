@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { currentProjectName, ensureInsideRoot, projectDir, safeAssetId } from "./files.js";
@@ -126,15 +126,23 @@ export async function changeMusic(action: "new" | "load" | "rename", value: stri
     const destination = musicFile(value);
     await mkdir(destination);
     const moved: { from: string; to: string }[] = [];
+    const source = musicFile(id);
     const track = structuredClone(current);
     track.id = value; track.name = value; track.updatedAt = new Date().toISOString();
     try {
-      await rename(musicFile(id), destination);
+      for (const entry of await readdir(source)) {
+        const from = path.join(source, entry);
+        const to = path.join(destination, entry);
+        await rename(from, to);
+        moved.push({ from, to });
+      }
       if (track.output) {
         const previous = track.output.audio;
         const next = path.posix.join(path.posix.dirname(previous), `${value}.wav`);
-        await rename(musicFile(value, previous), musicFile(value, next));
-        moved.push({ from: previous, to: next });
+        const from = musicFile(value, previous);
+        const to = musicFile(value, next);
+        await rename(from, to);
+        moved.push({ from, to });
         track.output.audio = next;
       }
       await writeJson(musicFile(value, "music.json"), track);
@@ -142,18 +150,11 @@ export async function changeMusic(action: "new" | "load" | "rename", value: stri
         ? { id: value, name: value, path: `music/${value}/music.json` } : entry);
       doc.activeMusicId = value;
       await writeProjectDocument(doc);
+      await rm(source, { recursive: true, force: true }).catch(() => {});
     } catch (error) {
-      for (const move of moved.reverse()) await rename(musicFile(value, move.to), musicFile(value, move.from));
-      // Only move back when the source was successfully moved into the reserved destination.
-      const manifest = path.join(destination, "music.json");
-      try {
-        await readFile(manifest);
-        await writeJson(manifest, current);
-        await rename(destination, musicFile(id));
-      } catch (rollbackError) {
-        if ((rollbackError as NodeJS.ErrnoException).code !== "ENOENT") throw rollbackError;
-        await rm(destination, { recursive: true, force: true });
-      }
+      for (const move of moved.reverse()) await rename(move.to, move.from);
+      await writeJson(path.join(source, "music.json"), current);
+      await rm(destination, { recursive: true, force: true });
       throw error;
     }
   }

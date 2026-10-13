@@ -10,7 +10,7 @@ import { pngFixture } from './helpers/png.ts';
 test('API requires explicit project context and serves assets from project storage', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'studio-api-'));
   const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
-    env: { ...process.env, PORT: '0', AI_GAME_STUDIO_HOME: root, OPENROUTER_API_KEY: '' },
+    env: { ...process.env, PORT: '0', AI_GAME_STUDIO_HOME: root, AI_PROVIDER: 'openrouter', OPENROUTER_API_KEY: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = "";
@@ -24,6 +24,9 @@ test('API requires explicit project context and serves assets from project stora
       });
       child.once('exit', code => { clearTimeout(timer); reject(new Error(`Server exited ${code}: ${stderr}`)); });
     });
+    const health = await (await fetch(base + '/api/health')).json();
+    assert.equal(health.aiProvider, 'openrouter');
+    assert.equal(health.hasApiKey, false);
     let headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const post = (route: string, body: unknown) => fetch(base + route, { method: 'POST', headers, body: JSON.stringify(body) });
     const videoModels = await (await fetch(base + '/api/models/video')).json();

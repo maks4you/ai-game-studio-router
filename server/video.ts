@@ -1,11 +1,9 @@
-// Image-to-video generation via OpenRouter /api/v1/videos with polling.
-// Flow: submit job → poll polling_url every few seconds → on `completed`, return unsigned_urls[0]
-// Downloads use authorization headers only for OpenRouter-hosted URLs.
+// Image-to-video generation via the selected provider's /api/v1/videos endpoint.
+// Flow: submit job → poll polling_url every few seconds → on `completed`, return unsigned_urls[0].
 
 import { prepareVideoReference } from "./video-reference.js";
+import { getAiProviderConfig, type AiProviderConfig } from "./ai-provider.js";
 import { videoFrameError } from "../src/lib/video-capabilities.js";
-
-const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
 export const VIDEO_MODELS = [
   { id: "x-ai/grok-imagine-video", label: "Grok Imagine Video", defaultDuration: 2, supportsEndImage: false, maxKeyframeImages: 1 },
@@ -74,8 +72,8 @@ export async function generateSpriteMotionVideo(
   model: VideoModelId = DEFAULT_VIDEO_MODEL,
   endpoints: { startImage?: string; endImage?: string; characterPrompt?: string; stylePrompt?: string } = {},
 ): Promise<VideoDownload> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
+  const provider = getAiProviderConfig();
+  if (!provider.apiKey) throw new Error(`${provider.keyName} is not set`);
 
   const frameError = videoFrameError(VIDEO_MODELS.find(option => option.id === model)!,
     !!endpoints.startImage, !!endpoints.endImage);
@@ -103,10 +101,10 @@ export async function generateSpriteMotionVideo(
   const reference = !frameImages.length && model !== "minimax/hailuo-3-max"
     ? { type: "image_url", image_url: { url: await prepareVideoReference(image) } } : null;
 
-  const submitRes = await fetch(`${OPENROUTER_BASE}/videos`, {
+  const submitRes = await fetch(`${provider.baseUrl}/videos`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${provider.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -121,10 +119,10 @@ export async function generateSpriteMotionVideo(
 
   let job = (await submitRes.json().catch(() => ({}))) as VideoJob & ErrorResponse;
   if (!submitRes.ok) {
-    throw new Error(`OpenRouter video submit failed: ${extractError(job, submitRes.status)}`);
+    throw new Error(`${provider.label} video submit failed: ${extractError(job, submitRes.status)}`);
   }
   if (!job.id) {
-    throw new Error("OpenRouter video submit returned no job id");
+    throw new Error(`${provider.label} video submit returned no job id`);
   }
 
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
@@ -135,57 +133,58 @@ export async function generateSpriteMotionVideo(
       job.status === "expired"
     ) {
       throw new Error(
-        `OpenRouter video ${job.status}: ${extractError(job, 200)}`,
+        `${provider.label} video ${job.status}: ${extractError(job, 200)}`,
       );
     }
 
     await sleep(POLL_INTERVAL_MS);
 
     const pollUrl = job.polling_url
-      ? new URL(job.polling_url, "https://openrouter.ai").toString()
-      : `${OPENROUTER_BASE}/videos/${job.id}`;
-    if (!isOpenRouterHost(pollUrl) || !pollUrl.startsWith("https://")) {
-      throw new Error("OpenRouter returned an invalid polling URL");
+      ? new URL(job.polling_url, new URL(provider.baseUrl).origin).toString()
+      : `${provider.baseUrl}/videos/${job.id}`;
+    if (!isProviderHost(pollUrl, provider)) {
+      throw new Error(`${provider.label} returned an invalid polling URL`);
     }
 
     const pollRes = await fetch(pollUrl, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${provider.apiKey}` },
     });
     job = (await pollRes.json().catch(() => ({}))) as VideoJob & ErrorResponse;
     if (!pollRes.ok) {
       throw new Error(
-        `OpenRouter video poll failed: ${extractError(job, pollRes.status)}`,
+        `${provider.label} video poll failed: ${extractError(job, pollRes.status)}`,
       );
     }
   }
 
   if (job.status !== "completed") {
-    throw new Error(`OpenRouter video did not complete in time (last status: ${job.status})`);
+    throw new Error(`${provider.label} video did not complete in time (last status: ${job.status})`);
   }
 
-  return resolveDownloadable(job, apiKey);
+  return resolveDownloadable(job, provider);
 }
 
-function resolveDownloadable(job: VideoJob, apiKey: string): VideoDownload {
-  const authHeaders = { Authorization: `Bearer ${apiKey}` };
+function resolveDownloadable(job: VideoJob, provider: AiProviderConfig): VideoDownload {
+  const authHeaders = { Authorization: `Bearer ${provider.apiKey}` };
   const unsigned = job.unsigned_urls?.[0];
   if (unsigned) {
-    // openrouter.ai-hosted unsigned URLs still need the bearer token. Send the key only
-    // to openrouter so it can't leak to a third-party CDN.
-    return isOpenRouterHost(unsigned)
+    return isProviderHost(unsigned, provider)
       ? { url: unsigned, headers: authHeaders }
       : { url: unsigned };
   }
   return {
-    url: `${OPENROUTER_BASE}/videos/${job.id}/content?index=0`,
+    url: `${provider.baseUrl}/videos/${job.id}/content?index=0`,
     headers: authHeaders,
   };
 }
 
-function isOpenRouterHost(url: string): boolean {
+function isProviderHost(url: string, provider: AiProviderConfig): boolean {
   try {
-    const h = new URL(url).hostname;
-    return h === "openrouter.ai" || h.endsWith(".openrouter.ai");
+    const host = new URL(url);
+    const base = new URL(provider.baseUrl);
+    if (host.protocol !== "https:" || host.port) return false;
+    return host.hostname === base.hostname ||
+      (provider.name === "openrouter" && host.hostname.endsWith(".openrouter.ai"));
   } catch {
     return false;
   }

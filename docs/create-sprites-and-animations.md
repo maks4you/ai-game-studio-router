@@ -1,6 +1,6 @@
 # Create sprites and animations
 
-Use **Characters & Animations** to create a character, generate its reference views, and build named animations. Complete the [setup](../README.md#setup-and-run) with an `OPENROUTER_API_KEY` before generating.
+Use **Characters & Animations** to create a character, generate its reference views, and build named animations. Complete the [setup](../README.md#setup-and-run) with `AI_PROVIDER` set to `openrouter` or `routerai` and the matching API key before generating.
 
 ## Create a character
 
@@ -38,7 +38,7 @@ The app generates a video, removes its chroma background, and extracts transpare
 
 ### Model settings
 
-These are the settings supported by the app's OpenRouter routes:
+These are the settings currently supported by the app's image/video routes:
 
 | Model | Default clip length | Start/end images |
 | --- | --- | --- |
@@ -121,7 +121,7 @@ The PNG is a horizontal strip of **64×64**, **128×128**, or **256×256 frames*
 
 ## Troubleshooting
 
-- **Missing key:** set `OPENROUTER_API_KEY` in `.env` and restart the app.
+- **Missing key:** set the selected provider's key (`OPENROUTER_API_KEY` or `ROUTERAI_API_KEY`) in `.env` and restart the app.
 - **Image, video, or GIF processing fails:** check that `ffmpeg` is installed and available on your PATH.
 - **A reference fails alignment:** request the full character with clear space around it and retry.
 - **PNG and Aseprite save but the animated preview fails:** fix the processing issue and click **Update Spritesheet** to rebuild the preview.

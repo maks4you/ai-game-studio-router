@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-// Video inputs need an opaque backdrop matching extract-frames.sh's chroma key.
+// Video inputs need an opaque backdrop matching the frame extraction chroma key.
 // Work in memory so the original transparent character reference stays intact.
 export async function prepareVideoReference(image: string, canvasSize?: number): Promise<string> {
   let source: Buffer;

@@ -43,3 +43,23 @@ test("Flare defaults request medium-quality PNG with automatic background throug
     assert.equal(legacy.quality, undefined);
   }
 });
+
+test("RouterAI image generation uses its API endpoint and server-side bearer key", async t => {
+  const oldProvider = process.env.AI_PROVIDER;
+  const oldKey = process.env.ROUTERAI_API_KEY;
+  process.env.AI_PROVIDER = "routerai";
+  process.env.ROUTERAI_API_KEY = "routerai-test-key";
+  t.after(() => {
+    if (oldProvider === undefined) delete process.env.AI_PROVIDER;
+    else process.env.AI_PROVIDER = oldProvider;
+    if (oldKey === undefined) delete process.env.ROUTERAI_API_KEY;
+    else process.env.ROUTERAI_API_KEY = oldKey;
+  });
+  t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    assert.equal(url, "https://routerai.ru/api/v1/images");
+    assert.equal((init.headers as Record<string, string>).Authorization, "Bearer routerai-test-key");
+    return Response.json({ data: [{ b64_json: png, media_type: "image/png" }] });
+  });
+
+  assert.equal(await generateSpriteImage("pixel hero", "openai/gpt-image-2"), png);
+});

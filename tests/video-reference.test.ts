@@ -165,7 +165,7 @@ for (const hasStartImage of [false, true]) {
     t.mock.method(globalThis, "fetch", async () => { assert.fail("Unsupported end images must not reach the provider"); });
     await assert.rejects(generateSpriteMotionVideo("unused", "turn", 5, "minimax/hailuo-3-max",
       { startImage: hasStartImage ? "invalid-start" : undefined, endImage: "invalid-end" }),
-    /H3 Max supports only a start image through OpenRouter.*MiniMax H3 or Seedance/);
+    /H3 Max supports only a start image with the selected API provider.*MiniMax H3 or Seedance/);
   });
 }
 
@@ -190,8 +190,8 @@ test("shared UI validation distinguishes supported endpoint types from supported
   const max = VIDEO_MODELS.find(model => model.id === "minimax/hailuo-3-max")!;
   assert.equal(videoFrameError(max, false, false), null);
   assert.equal(videoFrameError(max, true, false), null);
-  assert.match(videoFrameError(max, false, true)!, /supports only a start image through OpenRouter/);
-  assert.match(videoFrameError(max, true, true)!, /supports only a start image through OpenRouter/);
+  assert.match(videoFrameError(max, false, true)!, /supports only a start image with the selected API provider/);
+  assert.match(videoFrameError(max, true, true)!, /supports only a start image with the selected API provider/);
   // Models may advertise end images while still limiting requests to one frame.
   const single = { label: "Single-keyframe model", supportsEndImage: true, maxKeyframeImages: 1 };
   assert.equal(videoFrameError(single, false, true), null);
@@ -211,4 +211,36 @@ test("Grok rejects end images before preparing images or contacting the provider
   t.mock.method(globalThis, "fetch", async () => { assert.fail("Unsupported requests must not reach the provider"); });
   await assert.rejects(generateSpriteMotionVideo("invalid-image", "turn", 2, "x-ai/grok-imagine-video",
     { endImage: "invalid-end" }), /supports only a start image/);
+});
+
+test("RouterAI video generation uses its API key and only authenticates downloads on its own host", async t => {
+  const oldProvider = process.env.AI_PROVIDER;
+  const oldKey = process.env.ROUTERAI_API_KEY;
+  process.env.AI_PROVIDER = "routerai";
+  process.env.ROUTERAI_API_KEY = "routerai-test-key";
+  t.after(() => {
+    if (oldProvider === undefined) delete process.env.AI_PROVIDER;
+    else process.env.AI_PROVIDER = oldProvider;
+    if (oldKey === undefined) delete process.env.ROUTERAI_API_KEY;
+    else process.env.ROUTERAI_API_KEY = oldKey;
+  });
+  const downloads = [
+    "https://routerai.ru/api/v1/videos/test/content?index=0",
+    "https://cdn.example.com/video.mp4",
+  ];
+  t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    assert.equal(url, "https://routerai.ru/api/v1/videos");
+    assert.equal((init.headers as Record<string, string>).Authorization, "Bearer routerai-test-key");
+    const body = JSON.parse(init.body as string);
+    assert.equal(body.model, "minimax/hailuo-3-max");
+    assert.equal(body.prompt.includes("walk"), true);
+    return Response.json({ id: "test", status: "completed", unsigned_urls: [downloads.shift()] });
+  });
+
+  const ownDownload = await generateSpriteMotionVideo("unused", "walk", 5, "minimax/hailuo-3-max");
+  assert.equal(ownDownload.url, "https://routerai.ru/api/v1/videos/test/content?index=0");
+  assert.equal(ownDownload.headers?.Authorization, "Bearer routerai-test-key");
+  const externalDownload = await generateSpriteMotionVideo("unused", "walk", 5, "minimax/hailuo-3-max");
+  assert.equal(externalDownload.url, "https://cdn.example.com/video.mp4");
+  assert.equal(externalDownload.headers, undefined);
 });

@@ -1,8 +1,7 @@
-// Image generation via OpenRouter's dedicated Images API.
+// Image generation via the selected OpenRouter or RouterAI Images API.
 
 import { spawn } from "node:child_process";
-
-const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+import { getAiProviderConfig } from "./ai-provider.js";
 
 export const IMAGE_MODELS = [
   { id: "openai/gpt-image-2.5-flare", label: "OpenAI GPT Image 2.5 Flare" },
@@ -53,7 +52,7 @@ export async function normalizeImageToPng(
 
   if (!isJpeg(source)) {
     const format = declaredMediaType ?? "unknown format";
-    throw new Error(`OpenRouter returned unsupported image format: ${format}`);
+    throw new Error(`AI provider returned unsupported image format: ${format}`);
   }
 
   const png = await new Promise<Buffer>((resolve, reject) => {
@@ -117,16 +116,16 @@ export async function generateSpriteImage(
   model: ImageModelId = DEFAULT_IMAGE_MODEL,
   references: readonly string[] = [],
 ): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
+  const provider = getAiProviderConfig();
+  if (!provider.apiKey) throw new Error(`${provider.keyName} is not set`);
 
   const isFlare = model === "openai/gpt-image-2.5-flare";
   const fullPrompt = isFlare ? prompt.trim() : `${prompt.trim()}\n\n${CHROMA_DIRECTIVE}`;
 
-  const res = await fetch(`${OPENROUTER_BASE}/images`, {
+  const res = await fetch(`${provider.baseUrl}/images`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${provider.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -144,12 +143,12 @@ export async function generateSpriteImage(
       typeof json.error === "string"
         ? json.error
         : json.error?.message ?? `HTTP ${res.status}`;
-    throw new Error(`OpenRouter image generation failed: ${message}`);
+    throw new Error(`${provider.label} image generation failed: ${message}`);
   }
 
   const image = json.data?.[0];
   if (!image?.b64_json) {
-    throw new Error("OpenRouter response did not include an image");
+    throw new Error(`${provider.label} response did not include an image`);
   }
 
   return normalizeImageToPng(image.b64_json, image.media_type);

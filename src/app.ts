@@ -844,10 +844,11 @@ export function mountApp(root: HTMLElement) {
   ])
     .then(([health, projects, imageModelsResp, videoModelsResp]) => {
       if (!health.hasApiKey) {
-        toast("OPENROUTER_API_KEY is missing. Add it to .env to generate characters and animations.");
+        const keyName = health.aiProvider === "routerai" ? "ROUTERAI_API_KEY" : "OPENROUTER_API_KEY";
+        toast(`${keyName} is missing. Add it to .env to generate characters and animations.`);
         setStatus(
           spriteStatus,
-          "OPENROUTER_API_KEY is missing on the server. Add it to .env and restart.",
+          `${keyName} is missing on the server. Add it to .env and restart.`,
           "error",
         );
       }

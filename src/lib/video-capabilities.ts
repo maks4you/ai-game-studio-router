@@ -10,7 +10,7 @@ export function videoFrameError(
   hasEndImage: boolean,
 ): string | null {
   if (hasEndImage && !model.supportsEndImage) {
-    return `${model.label} supports only a start image through OpenRouter. ` +
+    return `${model.label} supports only a start image with the selected API provider. ` +
       "Clear the end image or choose MiniMax H3 or Seedance.";
   }
   if (hasStartImage && hasEndImage && model.maxKeyframeImages < 2) {

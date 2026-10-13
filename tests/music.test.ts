@@ -69,3 +69,13 @@ test("sound WAV encoding preserves every sample including attack, tail and provi
   assert.throws(() => prepareMusicWav(Buffer.alloc(3)), /Invalid/);
   assert.equal(redactProviderError("bad sk_secret xai-secret sk-or-secret"), "bad *** *** ***");
 });
+
+test("provider error redaction includes the configured RouterAI key", t => {
+  const oldKey = process.env.ROUTERAI_API_KEY;
+  process.env.ROUTERAI_API_KEY = "routerai-secret";
+  t.after(() => {
+    if (oldKey === undefined) delete process.env.ROUTERAI_API_KEY;
+    else process.env.ROUTERAI_API_KEY = oldKey;
+  });
+  assert.equal(redactProviderError("request failed with routerai-secret"), "request failed with ***");
+});

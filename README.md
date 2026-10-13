@@ -1,6 +1,6 @@
 # <img src="wombo-playing.gif" alt="Wombo mascot playing" width="96" height="96"> Wombo - The AI Game Studio
 
-Wombo is created with the help of Codex and Astra. It allows you to create named characters, animations, and sounds from text prompts. Generate aligned side, front and back references, then create effectively any animation sequence (e.g. idle, walking, fighting) with automatically saved PNG and Aseprite files. Image and video calls go through OpenRouter; Sound & SFX uses ElevenLabs directly from the server.
+Wombo is created with the help of Codex and Astra. It allows you to create named characters, animations, and sounds from text prompts. Generate aligned side, front and back references, then create effectively any animation sequence (e.g. idle, walking, fighting) with automatically saved PNG and Aseprite files. Image and video calls use OpenRouter or RouterAI from the server; Sound & SFX uses ElevenLabs directly from the server.
 
 ## Character creation
 
@@ -28,14 +28,14 @@ Turn your character into an animation, choose the frames to include, and save sp
 
 ## Setup and run
 
-Requires Node.js 20+, `ffmpeg`, and `zip` on your PATH.
+Requires Node.js 20+ and `ffmpeg` on your PATH. Frame extraction invokes `ffmpeg` directly; project ZIP export uses the installed `yazl` package.
 
 ```bash
 npm install
 cp .env.example .env
 ```
 
-In `.env`, set `OPENROUTER_API_KEY` for characters and animations, and `ELEVENLABS_API_KEY` for Sound & SFX. Each workflow only needs its own provider's key.
+In `.env`, set `AI_PROVIDER` to `openrouter` or `routerai` and provide the matching `OPENROUTER_API_KEY` or `ROUTERAI_API_KEY` for characters and animations. Set `ELEVENLABS_API_KEY` for Sound & SFX. The selected image/video provider and ElevenLabs use separate keys.
 
 ```bash
 npm run dev
