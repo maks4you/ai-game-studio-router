@@ -1,4 +1,4 @@
-// Image generation via the selected OpenRouter or RouterAI Images API.
+// Image generation via OpenRouter, RouterAI, or Pollinations Quest Pollen.
 
 import { spawn } from "node:child_process";
 import { getAiProviderConfig } from "./ai-provider.js";
@@ -7,14 +7,133 @@ export const IMAGE_MODELS = [
   { id: "openai/gpt-image-2.5-flare", label: "OpenAI GPT Image 2.5 Flare" },
   { id: "openai/gpt-image-2", label: "OpenAI GPT Image 2" },
   { id: "x-ai/grok-imagine-image-2.0", label: "xAI Grok Imagine Image 2.0" },
+  { id: "black-forest-labs/flux.2-klein-4b", label: "FLUX.2 Klein 4B (Pollinations Quest)" },
 ] as const;
 
-export type ImageModelId = (typeof IMAGE_MODELS)[number]["id"];
+export type ImageModelId = string;
 
-export const DEFAULT_IMAGE_MODEL: ImageModelId = "openai/gpt-image-2.5-flare";
+export const POLLINATIONS_IMAGE_MODEL: ImageModelId = "black-forest-labs/flux.2-klein-4b";
 
 export function isImageModelId(value: unknown): value is ImageModelId {
-  return typeof value === "string" && IMAGE_MODELS.some((model) => model.id === value);
+  if (typeof value !== "string") return false;
+  return IMAGE_MODELS.some((model) => model.id === value) || isConfiguredCustomImageModel(value);
+}
+
+const configuredImageModel = process.env.IMAGE_MODEL?.trim();
+function configuredImageApiBaseUrl(): string | null {
+  const configured = process.env.IMAGE_API_BASE_URL?.trim();
+  if (!configured) return null;
+  let url: URL;
+  try {
+    url = new URL(configured);
+  } catch {
+    throw new Error("IMAGE_API_BASE_URL must be a valid absolute HTTP(S) URL");
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password || url.search || url.hash) {
+    throw new Error("IMAGE_API_BASE_URL must use HTTP(S) and must not contain credentials, a query, or a fragment");
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+function isConfiguredCustomImageModel(value: string): boolean {
+  return Boolean(configuredImageApiBaseUrl() && process.env.IMAGE_MODEL?.trim() === value && value !== POLLINATIONS_IMAGE_MODEL);
+}
+
+if (configuredImageModel && !IMAGE_MODELS.some(model => model.id === configuredImageModel) &&
+  !isConfiguredCustomImageModel(configuredImageModel)) {
+  throw new Error(`IMAGE_MODEL must be one of: ${IMAGE_MODELS.map((model) => model.id).join(", ")}`);
+}
+
+export const DEFAULT_IMAGE_MODEL: ImageModelId = configuredImageModel
+  ? configuredImageModel as ImageModelId
+  : "openai/gpt-image-2.5-flare";
+
+export function getImageModels() {
+  const customModel = process.env.IMAGE_MODEL?.trim();
+  if (!customModel || customModel === POLLINATIONS_IMAGE_MODEL || !configuredImageApiBaseUrl()) return IMAGE_MODELS;
+  const matching = IMAGE_MODELS.find(model => model.id === customModel);
+  if (matching) {
+    return IMAGE_MODELS.map(model => model.id === customModel
+      ? { ...model, label: `Custom API: ${customModel}` }
+      : model);
+  }
+  return [...IMAGE_MODELS, { id: customModel, label: `Custom API: ${customModel}` }];
+}
+
+function isCustomImageApiModel(model: ImageModelId): boolean {
+  return isConfiguredCustomImageModel(model);
+}
+
+export function imageProviderKeyName(model: ImageModelId): string {
+  if (isCustomImageApiModel(model)) return "IMAGE_API_KEY";
+  return model === POLLINATIONS_IMAGE_MODEL ? "POLLINATIONS_API_KEY" : getAiProviderConfig().keyName;
+}
+
+export function hasImageProviderKey(model: ImageModelId): boolean {
+  if (isCustomImageApiModel(model)) return true;
+  return Boolean(model === POLLINATIONS_IMAGE_MODEL
+    ? process.env.POLLINATIONS_API_KEY
+    : getAiProviderConfig().apiKey);
+}
+
+function imageDataUrl(reference: string): { bytes: Buffer; mediaType: string; extension: string } {
+  const match = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(reference);
+  if (!match) throw new Error("Custom image API references must be PNG or JPEG data URLs");
+  return {
+    bytes: Buffer.from(match[2], "base64"),
+    mediaType: `image/${match[1]}`,
+    extension: match[1] === "jpeg" ? "jpg" : "png",
+  };
+}
+
+async function requestCustomImageApi(
+  model: ImageModelId,
+  prompt: string,
+  references: readonly string[],
+): Promise<Response> {
+  const baseUrl = configuredImageApiBaseUrl();
+  if (!baseUrl) throw new Error("IMAGE_API_BASE_URL is not configured");
+  const apiKey = process.env.IMAGE_API_KEY?.trim();
+  const headers: Record<string, string> = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  let body: BodyInit;
+  let endpoint: string;
+  if (references.length) {
+    endpoint = `${baseUrl}/images/edits`;
+    const form = new FormData();
+    form.append("model", model);
+    form.append("prompt", prompt);
+    form.append("n", "1");
+    form.append("size", "1024x1024");
+    form.append("response_format", "b64_json");
+    for (const reference of references) {
+      const image = imageDataUrl(reference);
+      form.append("image", new Blob([Uint8Array.from(image.bytes)], { type: image.mediaType }), `reference.${image.extension}`);
+    }
+    body = form;
+  } else {
+    endpoint = `${baseUrl}/images/generations`;
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify({ model, prompt, n: 1, size: "1024x1024", response_format: "b64_json" });
+  }
+
+  return fetch(endpoint, { method: "POST", headers, body, redirect: "error" });
+}
+
+async function verifyQuestOnlyKey(apiKey: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch("https://gen.pollinations.ai/account/key", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+  } catch {
+    throw new Error("Could not verify Pollinations API key. Image generation was not sent.");
+  }
+  const info = await response.json().catch(() => ({})) as { valid?: boolean; questPollenOnly?: boolean };
+  if (!response.ok || info.valid !== true || info.questPollenOnly !== true) {
+    throw new Error("POLLINATIONS_API_KEY must be a valid Quest Pollen-only key. Image generation was not sent.");
+  }
 }
 
 const CHROMA_DIRECTIVE =
@@ -116,25 +235,48 @@ export async function generateSpriteImage(
   model: ImageModelId = DEFAULT_IMAGE_MODEL,
   references: readonly string[] = [],
 ): Promise<string> {
-  const provider = getAiProviderConfig();
-  if (!provider.apiKey) throw new Error(`${provider.keyName} is not set`);
+  const isPollinations = model === POLLINATIONS_IMAGE_MODEL;
+  const isCustomApi = isCustomImageApiModel(model);
+  const provider = isPollinations || isCustomApi ? null : getAiProviderConfig();
+  const apiKey = isPollinations ? process.env.POLLINATIONS_API_KEY ?? ""
+    : isCustomApi ? process.env.IMAGE_API_KEY ?? "" : provider!.apiKey;
+  const providerLabel = isPollinations ? "Pollinations" : isCustomApi ? "Custom image API" : provider!.label;
+  if (!apiKey && !isCustomApi) throw new Error(`${imageProviderKeyName(model)} is not set`);
+  if (isPollinations) await verifyQuestOnlyKey(apiKey);
 
-  const isFlare = model === "openai/gpt-image-2.5-flare";
+  const isFlare = !isCustomApi && model === "openai/gpt-image-2.5-flare";
   const fullPrompt = isFlare ? prompt.trim() : `${prompt.trim()}\n\n${CHROMA_DIRECTIVE}`;
-
-  const res = await fetch(`${provider.baseUrl}/images`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${provider.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const endpoint = isPollinations
+    ? references.length ? "https://gen.pollinations.ai/v1/images/edits" : "https://gen.pollinations.ai/v1/images/generations"
+    : isCustomApi ? "" : `${provider!.baseUrl}/images`;
+  const body = isPollinations
+    ? {
+      model,
+      prompt: fullPrompt,
+      n: 1,
+      size: "1024x1024",
+      response_format: "b64_json",
+      ...(references.length ? {
+        image: references.length === 1 ? references[0] : references.map((image_url) => ({ image_url })),
+      } : {}),
+    }
+    : {
       model,
       prompt: fullPrompt,
       ...(references.length ? { input_references: references.map(url => ({ type: "image_url", image_url: { url } })) } : {}),
       ...(isFlare ? { quality: "medium", background: "auto", output_format: "png" } : {}),
-    }),
-  });
+    };
+
+  const res = isCustomApi
+    ? await requestCustomImageApi(model, fullPrompt, references)
+    : await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
   const json = (await res.json().catch(() => ({}))) as ImageGenerationResponse;
 
@@ -143,12 +285,12 @@ export async function generateSpriteImage(
       typeof json.error === "string"
         ? json.error
         : json.error?.message ?? `HTTP ${res.status}`;
-    throw new Error(`${provider.label} image generation failed: ${message}`);
+    throw new Error(`${providerLabel} image generation failed: ${message}`);
   }
 
   const image = json.data?.[0];
   if (!image?.b64_json) {
-    throw new Error(`${provider.label} response did not include an image`);
+    throw new Error(`${providerLabel} response did not include an image`);
   }
 
   return normalizeImageToPng(image.b64_json, image.media_type);

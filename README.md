@@ -35,7 +35,9 @@ npm install
 cp .env.example .env
 ```
 
-In `.env`, set `AI_PROVIDER` to `openrouter` or `routerai` and provide the matching `OPENROUTER_API_KEY` or `ROUTERAI_API_KEY` for characters and animations. Set `ELEVENLABS_API_KEY` for Sound & SFX. The selected image/video provider and ElevenLabs use separate keys.
+In `.env`, set `AI_PROVIDER` to `openrouter` or `routerai` and provide the matching `OPENROUTER_API_KEY` or `ROUTERAI_API_KEY` for animations. `IMAGE_MODEL` selects the default character image model. The example selects Pollinations FLUX.2 Klein 4B; create a key at [Pollinations API keys](https://enter.pollinations.ai/keys) with **Quest Pollen only** enabled, then set `POLLINATIONS_API_KEY`. The server verifies this restriction before every Pollinations generation and refuses to send the generation request if the key could spend paid Pollen. Quest credits are finite and generation stops when they run out. Existing OpenRouter and RouterAI image models remain selectable in the app. Set `ELEVENLABS_API_KEY` for Sound & SFX; each provider uses its own server-only key.
+
+To use an OpenAI-compatible image server on another machine, set `IMAGE_API_BASE_URL` to its API base URL (for example `http://100.x.x.x:9001/v1`) and set `IMAGE_MODEL` to the exact model ID accepted by that server. The app will add that model to the image-model selector. Set `IMAGE_API_KEY` if the server requires bearer authentication; leave it empty for an unauthenticated endpoint. The server must provide `POST /images/generations` and `POST /images/edits` under that base URL, accept `response_format=b64_json`, and return an OpenAI-style `data[0].b64_json` image. The edit route is used to keep generated character views consistent. A Tailscale URL is reachable only if the machine running this app's backend is also connected to that tailnet. `IMAGE_API_BASE_URL` is server-side configuration; browsers never connect directly to the remote host. The custom API applies only to the model configured in `IMAGE_MODEL`; animation/video still uses `AI_PROVIDER`.
 
 ```bash
 npm run dev
@@ -62,6 +64,7 @@ Use **Export** in the project header or beside a saved project in **Open** to do
 
 ## Guides
 
+- [Подключение удалённого API для генерации изображений (RU)](docs/remote-image-api.ru.md)
 - [Create sprites and animations](docs/create-sprites-and-animations.md)
 - [Create music and SFX](docs/create-music-and-sfx.md)
 - [AGENTS.md](AGENTS.md) — architecture, implementation rules, and testing.

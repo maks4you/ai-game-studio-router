@@ -10,7 +10,8 @@ import { pngFixture } from './helpers/png.ts';
 test('API requires explicit project context and serves assets from project storage', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'studio-api-'));
   const child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
-    env: { ...process.env, PORT: '0', AI_GAME_STUDIO_HOME: root, AI_PROVIDER: 'openrouter', OPENROUTER_API_KEY: '' },
+    env: { ...process.env, PORT: '0', AI_GAME_STUDIO_HOME: root, AI_PROVIDER: 'openrouter', OPENROUTER_API_KEY: '',
+      IMAGE_MODEL: 'black-forest-labs/flux.2-klein-4b', POLLINATIONS_API_KEY: 'test-pollinations-key' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = "";
@@ -27,6 +28,11 @@ test('API requires explicit project context and serves assets from project stora
     const health = await (await fetch(base + '/api/health')).json();
     assert.equal(health.aiProvider, 'openrouter');
     assert.equal(health.hasApiKey, false);
+    assert.equal(health.hasImageApiKey, true);
+    assert.equal(health.imageKeyName, 'POLLINATIONS_API_KEY');
+    const imageModels = await (await fetch(base + '/api/models/image')).json();
+    assert.equal(imageModels.default, 'black-forest-labs/flux.2-klein-4b');
+    assert.ok(imageModels.models.some((model: { id: string }) => model.id === imageModels.default));
     let headers: Record<string, string> = { 'Content-Type': 'application/json' };
     const post = (route: string, body: unknown) => fetch(base + route, { method: 'POST', headers, body: JSON.stringify(body) });
     const videoModels = await (await fetch(base + '/api/models/video')).json();
@@ -46,6 +52,7 @@ test('API requires explicit project context and serves assets from project stora
     response = await post('/api/projects/sprites/new', { value: 'hero' });
     const first = await response.json();
     assert.equal(first.project.activeSpriteId, 'hero');
+    assert.equal(first.spriteModel, 'black-forest-labs/flux.2-klein-4b');
     assert.deepEqual(first.animations, []);
     assert.equal(first.styleId, null);
     headers['X-Sprite-Id'] = first.project.activeSpriteId;

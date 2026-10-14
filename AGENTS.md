@@ -2,7 +2,7 @@
 
 ## Character views and animation endpoints (supersedes single-reference details below)
 
-- Generate side (facing right), front and back views through the selected OpenRouter or RouterAI Images API. Front/back use the same side reference via `input_references`.
+- Generate side (facing right), front and back views through the selected OpenRouter or RouterAI Images API, Pollinations Quest-Pollen backend, or the optional OpenAI-compatible `IMAGE_API_BASE_URL`. Front/back use the same side reference via the backend's image-edit input.
 - Normalize actual visible silhouettes to a shared 1024×1024 transparent canvas, equal height, horizontal center and baseline, without stretching or clipping. Preserve provider originals. Stage all three views in one revision; atomically update only the character manifest after all succeed.
 - Version-2 character manifests add optional `referenceViews` and `referenceAlignment`; `sprite` remains the side-view alias. Legacy single references remain available as Side without rewriting their original files.
 - Animation `startImage` / `endImage` are optional saved PNG poses with source metadata. Pickers offer references and the first/last chronologically included frames of any animation in the same character. Snapshot inputs into the target animation; rename and duplicate remap their paths, and deleting a source does not break saved poses.
@@ -53,15 +53,15 @@ The project implementation now supersedes the older working-copy/snapshot detail
 
 ## Project
 
-A lightweight web app — and the seed of a larger AI Game Studio — for generating 2D game assets from text prompts. Today: reference sprites and animation frames composed into a 1×N spritesheet with a looping animated preview. Image and video generation use the server-side provider selected with `AI_PROVIDER` (`openrouter` or `routerai`); Sound & SFX uses ElevenLabs directly. New asset types (backgrounds, tilemaps, SFX, music, voice) plug into the same pattern.
+A lightweight web app — and the seed of a larger AI Game Studio — for generating 2D game assets from text prompts. Today: reference sprites and animation frames composed into a 1×N spritesheet with a looping animated preview. Video uses the server-side provider selected with `AI_PROVIDER` (`openrouter` or `routerai`); images can also use Pollinations or an OpenAI-compatible custom endpoint. Sound & SFX uses ElevenLabs directly. New asset types (backgrounds, tilemaps, SFX, music, voice) plug into the same pattern.
 
 The app is implemented as a Vite + TypeScript single-page client and a small Express server (run concurrently in dev via `tsx watch`). Keep the UI lightweight and avoid heavy UI libraries. The server makes raw `fetch` calls to the selected image/video provider and ElevenLabs — no provider SDKs.
 
 ## Non-negotiable requirements
 
 - The UI must adhere closely to `mockup.png` (the three-column "Sprite Sheet Builder" layout).
-- Use OpenRouter or RouterAI, selected by `AI_PROVIDER`, as the server-side boundary for image and video models.
-- Expect the matching `OPENROUTER_API_KEY` or `ROUTERAI_API_KEY` to be defined in a local `.env` file.
+- Use OpenRouter or RouterAI, selected by `AI_PROVIDER`, for video and standard image models. `IMAGE_MODEL` may select Pollinations FLUX.2 Klein for image generation with a separate Quest-Pollen-only key, or a model served by the optional OpenAI-compatible `IMAGE_API_BASE_URL`.
+- Keep all provider keys, including `IMAGE_API_KEY`, server-side in `.env`. Pollinations generation must verify `questPollenOnly: true` before sending an image request.
 - Never expose provider API keys in client-side code.
 - All model calls go through server-side routes; the browser never talks to OpenRouter, RouterAI, or any model provider directly.
 - Generated artifacts live under `projects/` (gitignored). Source frames, videos, spritesheets, gifs, and the working manifest are never committed.
@@ -76,6 +76,10 @@ AI_PROVIDER=openrouter
 OPENROUTER_API_KEY=
 ROUTERAI_API_KEY=
 ELEVENLABS_API_KEY=
+IMAGE_MODEL=black-forest-labs/flux.2-klein-4b
+POLLINATIONS_API_KEY=
+IMAGE_API_BASE_URL=
+IMAGE_API_KEY=
 ```
 
 Developer copies it locally:
@@ -91,7 +95,7 @@ npm install express
 npm install -D vite typescript tsx concurrently dotenv @types/express @types/node
 ```
 
-No provider SDK is used. The server hits the selected OpenRouter or RouterAI API directly with `fetch`. Set `AI_PROVIDER=routerai` and `ROUTERAI_API_KEY` to use RouterAI; the default remains OpenRouter for existing installations. Sound & SFX continues to use `ELEVENLABS_API_KEY` directly.
+No provider SDK is used. The server hits the selected OpenRouter or RouterAI API directly with `fetch`; Pollinations is used only for its explicit image model. Set `AI_PROVIDER=routerai` and `ROUTERAI_API_KEY` to use RouterAI for video and standard image models; the default remains OpenRouter for existing installations. `IMAGE_MODEL` controls the default image model for new characters. An optional `IMAGE_API_BASE_URL` can point to an OpenAI-compatible image API; its model ID is `IMAGE_MODEL`, and `IMAGE_API_KEY` is an optional bearer key. The endpoint must implement `images/generations` and multipart `images/edits` and return `data[0].b64_json`. Pollinations `POLLINATIONS_API_KEY` must be configured as Quest Pollen-only; the server checks that setting on Pollinations before generating. Quest Pollen is finite and requests stop at zero. Sound & SFX continues to use `ELEVENLABS_API_KEY` directly.
 
 `ffmpeg` must be available on `PATH` — used for both frame extraction (with chroma-key alpha) and animated GIF preview build.
 
@@ -164,7 +168,8 @@ Use TypeScript everywhere. Strict mode on.
 
 ### Server endpoints
 
-- `GET /api/health` → `{ ok, hasApiKey, aiProvider }`. `hasApiKey` reflects the selected provider's API key.
+- `GET /api/health` → `{ ok, hasApiKey, hasImageApiKey, imageKeyName, aiProvider }`. `hasApiKey` reflects the selected video provider; image key state follows `IMAGE_MODEL`.
+- `GET /api/models/image` → `{ models, default }`. `default` is `IMAGE_MODEL` (defaulting to OpenAI for existing `.env` files); the model list drives the image dropdown.
 - `GET /api/models/video` → `{ models: [{ id, label, defaultDuration }, ...], default: "x-ai/grok-imagine-video" }`. The list is the single source of truth for the client's model dropdown and the server's allowlist.
 - `GET /api/projects/current` → current `projects/latest/` view (hydrated with URLs).
 - `GET /api/projects` → array of saved snapshots `{ name, updatedAt }`, newest first.
@@ -174,16 +179,16 @@ Use TypeScript everywhere. Strict mode on.
 - `POST /api/projects/delete { name }` → removes a named snapshot.
 - `POST /api/projects/selection { selectedIndices: number[] }` → debounced persistence of the user's frame selection.
 - `POST /api/projects/spritesheet { dataUrl }` → writes `projects/latest/spritesheet.png` and best-effort builds `projects/latest/preview.gif` from the current selection. Returns the updated view.
-- `POST /api/sprites/generate { prompt }` → calls the selected provider's `/api/v1/images`, writes the reference PNG, parses dimensions, and returns `{ view, dataUrl }`.
+- `POST /api/sprites/generate { prompt, model? }` → calls the selected image backend, writes the reference PNG, parses dimensions, and returns `{ view, dataUrl }`. Pollinations calls first verify its key is Quest-Pollen-only.
 - `POST /api/sprites/animate { image, text, model?, duration? }` → resolves `image` (either a `data:` URL or a `/projects/...` path with query strings stripped), validates `model` against the allowlist, calls the selected provider's `/api/v1/videos` with the chosen model's `defaultDuration` if not overridden, polls until `completed`, downloads the clip, runs frame extraction, returns the updated view.
 
 All error responses are `{ error: string }` with configured provider keys and provider token formats redacted.
 
 ## Initial sprite image generation
 
-Image generation goes through the selected provider's `/api/v1/images` endpoint. RouterAI uses `https://routerai.ru/api/v1`; OpenRouter remains the default. Select the provider with `AI_PROVIDER` and provide its matching server-only API key.
+Image generation uses `IMAGE_MODEL` as the default. OpenRouter and RouterAI models go through the provider selected by `AI_PROVIDER` and its matching server-only key. Pollinations `black-forest-labs/flux.2-klein-4b` uses `POLLINATIONS_API_KEY` and its OpenAI-compatible `/v1/images/generations` or `/v1/images/edits` endpoint. Before each generation, verify `/account/key` reports both `valid: true` and `questPollenOnly: true`; do not send generation requests when this cannot be verified. Image references are data URLs for Pollinations edits.
 
-The selected provider must support the chosen image model and its parameters. Both documented APIs accept `model`, `prompt`, and `input_references`, and return generated image bytes in `data[0].b64_json`.
+The selected provider must support the chosen image model and its parameters. OpenRouter/RouterAI accept `model`, `prompt`, and `input_references`; Pollinations edits accept `model`, `prompt`, and an `image` data URL. All responses are normalized from `data[0].b64_json`.
 
 ```ts
 import { getAiProviderConfig } from "./ai-provider.js";
@@ -446,7 +451,8 @@ When returning generated assets to the frontend, expose them through `/projects/
 
 Surface these cleanly in the UI without exposing server internals or secrets:
 
-- Missing `OPENROUTER_API_KEY` (health-check warning on boot, plus a 500 on any OpenRouter-backed endpoint).
+- Missing selected image key (`OPENROUTER_API_KEY`, `ROUTERAI_API_KEY`, or `POLLINATIONS_API_KEY`) or animation provider key.
+- Pollinations key not configured as Quest Pollen-only; fail before sending image generation.
 - Empty prompt.
 - OpenRouter generation failure (image: 4xx with provider error message).
 - Video job terminal failure (`failed | cancelled | expired`).
@@ -461,12 +467,12 @@ Surface these cleanly in the UI without exposing server internals or secrets:
 - "Nothing to save" when `latest/` doesn't exist yet.
 - GIF build failure (non-fatal — spritesheet still saves; status line surfaces it).
 
-Server logs and 4xx responses redact `sk-or-...` and `xai-...` substrings before printing.
+Server logs and responses redact configured provider keys and token-like substrings before printing.
 
 ## Security requirements
 
-- All OpenRouter calls server-side.
-- Never log `OPENROUTER_API_KEY`. Redact `sk-or-...` and `xai-...` substrings in error messages.
+- All image/video calls server-side.
+- Never log provider API keys. Redact OpenRouter, RouterAI, Pollinations, and ElevenLabs keys in error messages.
 - Only send the `Authorization` header to OpenRouter hosts — parse `unsigned_urls` and skip the header if the hostname isn't `openrouter.ai` (or a subdomain).
 - No arbitrary shell commands from the client.
 - All file paths going to ffmpeg or `fs.cp`/`rm` are validated with `ensureInsideRoot`.

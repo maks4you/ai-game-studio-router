@@ -843,14 +843,17 @@ export function mountApp(root: HTMLElement) {
     getVideoModels(),
   ])
     .then(([health, projects, imageModelsResp, videoModelsResp]) => {
-      if (!health.hasApiKey) {
-        const keyName = health.aiProvider === "routerai" ? "ROUTERAI_API_KEY" : "OPENROUTER_API_KEY";
-        toast(`${keyName} is missing. Add it to .env to generate characters and animations.`);
+      if (health.hasImageApiKey === false) {
+        const keyName = health.imageKeyName ?? (health.aiProvider === "routerai" ? "ROUTERAI_API_KEY" : "OPENROUTER_API_KEY");
+        toast(`${keyName} is missing. Add it to .env to generate character images.`);
         setStatus(
           spriteStatus,
           `${keyName} is missing on the server. Add it to .env and restart.`,
           "error",
         );
+      } else if (!health.hasApiKey) {
+        const keyName = health.aiProvider === "routerai" ? "ROUTERAI_API_KEY" : "OPENROUTER_API_KEY";
+        toast(`${keyName} is missing. Add it to .env to generate animations.`);
       }
       store.set({
         savedProjects: projects,

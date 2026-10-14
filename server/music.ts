@@ -26,7 +26,8 @@ export function validateMusicSettings(value: unknown, allowEmpty = false): Music
 }
 
 export function redactProviderError(message: string): string {
-  for (const key of [process.env.ELEVENLABS_API_KEY, process.env.OPENROUTER_API_KEY, process.env.ROUTERAI_API_KEY]) {
+  for (const key of [process.env.ELEVENLABS_API_KEY, process.env.OPENROUTER_API_KEY,
+    process.env.ROUTERAI_API_KEY, process.env.POLLINATIONS_API_KEY, process.env.IMAGE_API_KEY]) {
     if (key) message = message.split(key).join("***");
   }
   return message.replace(/(?:sk-or-|xai-|sk_)[A-Za-z0-9_-]+/g, "***");

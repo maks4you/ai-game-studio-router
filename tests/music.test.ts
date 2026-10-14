@@ -70,12 +70,22 @@ test("sound WAV encoding preserves every sample including attack, tail and provi
   assert.equal(redactProviderError("bad sk_secret xai-secret sk-or-secret"), "bad *** *** ***");
 });
 
-test("provider error redaction includes the configured RouterAI key", t => {
+test("provider error redaction includes configured RouterAI and Pollinations keys", t => {
   const oldKey = process.env.ROUTERAI_API_KEY;
+  const oldPollinationsKey = process.env.POLLINATIONS_API_KEY;
+  const oldImageKey = process.env.IMAGE_API_KEY;
   process.env.ROUTERAI_API_KEY = "routerai-secret";
+  process.env.POLLINATIONS_API_KEY = "pollinations-secret";
+  process.env.IMAGE_API_KEY = "image-api-secret";
   t.after(() => {
     if (oldKey === undefined) delete process.env.ROUTERAI_API_KEY;
     else process.env.ROUTERAI_API_KEY = oldKey;
+    if (oldPollinationsKey === undefined) delete process.env.POLLINATIONS_API_KEY;
+    else process.env.POLLINATIONS_API_KEY = oldPollinationsKey;
+    if (oldImageKey === undefined) delete process.env.IMAGE_API_KEY;
+    else process.env.IMAGE_API_KEY = oldImageKey;
   });
   assert.equal(redactProviderError("request failed with routerai-secret"), "request failed with ***");
+  assert.equal(redactProviderError("request failed with pollinations-secret"), "request failed with ***");
+  assert.equal(redactProviderError("request failed with image-api-secret"), "request failed with ***");
 });

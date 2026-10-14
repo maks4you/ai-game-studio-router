@@ -121,7 +121,8 @@ The PNG is a horizontal strip of **64×64**, **128×128**, or **256×256 frames*
 
 ## Troubleshooting
 
-- **Missing key:** set the selected provider's key (`OPENROUTER_API_KEY` or `ROUTERAI_API_KEY`) in `.env` and restart the app.
+- **Missing image key:** set the key for `IMAGE_MODEL` in `.env` and restart. For Pollinations FLUX.2 Klein, use a `POLLINATIONS_API_KEY` restricted to Quest Pollen only; the server rejects a key that can spend paid Pollen. For a custom OpenAI-compatible image endpoint, set `IMAGE_API_BASE_URL`, the exact remote model ID in `IMAGE_MODEL`, and `IMAGE_API_KEY` if authentication is required.
+- **Missing animation key:** set the selected `AI_PROVIDER` key (`OPENROUTER_API_KEY` or `ROUTERAI_API_KEY`) in `.env` and restart.
 - **Image, video, or GIF processing fails:** check that `ffmpeg` is installed and available on your PATH.
 - **A reference fails alignment:** request the full character with clear space around it and retry.
 - **PNG and Aseprite save but the animated preview fails:** fix the processing issue and click **Update Spritesheet** to rebuild the preview.

@@ -18,7 +18,9 @@ import { stageReferenceImage, referenceImageDataUrl } from "./reference-image.js
 import { existsSync } from "node:fs";
 import {
   DEFAULT_IMAGE_MODEL,
-  IMAGE_MODELS,
+  getImageModels,
+  hasImageProviderKey,
+  imageProviderKeyName,
   isImageModelId,
 } from "./image.js";
 import {
@@ -122,7 +124,9 @@ function asImageRef(v: unknown): string {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, hasApiKey: HAS_KEY, aiProvider: AI_PROVIDER.name, hasElevenLabsApiKey: Boolean(process.env.ELEVENLABS_API_KEY) });
+  res.json({ ok: true, hasApiKey: HAS_KEY, hasImageApiKey: hasImageProviderKey(DEFAULT_IMAGE_MODEL),
+    imageKeyName: imageProviderKeyName(DEFAULT_IMAGE_MODEL), aiProvider: AI_PROVIDER.name,
+    hasElevenLabsApiKey: Boolean(process.env.ELEVENLABS_API_KEY) });
 });
 
 app.get("/api/models/video", (_req, res) => {
@@ -130,7 +134,7 @@ app.get("/api/models/video", (_req, res) => {
 });
 
 app.get("/api/models/image", (_req, res) => {
-  res.json({ models: IMAGE_MODELS, default: DEFAULT_IMAGE_MODEL });
+  res.json({ models: getImageModels(), default: DEFAULT_IMAGE_MODEL });
 });
 
 app.get("/api/models/music", (_req, res) => {
@@ -393,7 +397,14 @@ app.post("/api/projects/spritesheet", async (req, res) => {
   }
 });
 
-app.post("/api/sprites/generate", requireKey, async (req, res) => {
+app.post("/api/sprites/generate", (req, res, next) => {
+  const model = isImageModelId(req.body?.model) ? req.body.model : DEFAULT_IMAGE_MODEL;
+  if (!hasImageProviderKey(model)) {
+    res.status(500).json({ error: `${imageProviderKeyName(model)} is not configured. Add it to .env and restart the server.` });
+    return;
+  }
+  next();
+}, async (req, res) => {
   let staged: string | undefined;
   try {
     const current = await readManifest();
